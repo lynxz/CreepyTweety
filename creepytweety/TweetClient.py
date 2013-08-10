@@ -9,14 +9,13 @@ import oauth2 as oauth
 import httplib2
 import urlparse
 import json
+import sqlite3
 from time import time, sleep
 
 USER_TIMELINE_URL = 'https://api.twitter.com/1.1/statuses/user_timeline.json'
 
 CONSUMER_KEY = 'HAgdrAVwYrtn4enya9ow'
 CONSUMER_SECRET = 'kyhCttZf1mL8VJ2P1hEvZPIr35WbsX98mgGb8xTg4'
-
-TOKEN_FILE = 'access_tokens.dat'
 
 class TweetClient(oauth.Client):
     '''
@@ -30,25 +29,27 @@ class TweetClient(oauth.Client):
         self.consumer = oauth.Consumer(CONSUMER_KEY, CONSUMER_SECRET)
         super(TweetClient, self).__init__(oauth.Consumer(CONSUMER_KEY, CONSUMER_SECRET))
         
-        self.ACCESS_TOKEN_KEY = ''
-        self.ACCESS_TOKEN_SECRET = ''
+        self.conn = sqlite3.connect('tweetbase.db')
+        self.ACCESS_TOKEN = ()
         self.sign_method = sign_method
         self.limit_reached = False
         self.renewed_limit_time = 0.0
-        
     
     def __read_tokens(self):
-        with open(TOKEN_FILE, 'r') as f:
-            self.ACCESS_TOKEN_KEY = f.readline().rstrip('\n')
-            self.ACCESS_TOKEN_SECRET = f.readline().rstrip('\n') 
-    
-    def __write_tokens(self):
-        with open(TOKEN_FILE, 'w') as f:
-            f.write(self.ACCESS_TOKEN_KEY + '\n')
-            f.write(self.ACCESS_TOKEN_SECRET + '\n')
+        
+        cursor = self.conn.cursor()
+        cursor.execute('''SELECT name FROM sqlite_master WHERE type=? AND name=?''', ('table', 'token_info')) # Is this table already created
+        row = cursor.fetchone()
+        if row == None:
+            self.__get_tokens(cursor)
+        else:
+            cursor.execute('''SELECT * FROM token_info''')
+            self.ACCESS_TOKEN = cursor.fetchone() 
 
-    def __get_tokens(self):
+    def __get_tokens(self, cursor):
 
+        cursor.execute('''CREATE TABLE token_info (access_token_key TEXT, access_token_secret TEXT)''') # create the table
+        
         request_token_url = 'http://twitter.com/oauth/request_token'
         access_token_url = 'http://twitter.com/oauth/access_token'
         authorize_url = 'http://twitter.com/oauth/authorize'
@@ -86,10 +87,9 @@ class TweetClient(oauth.Client):
         print "You may now access protected resources using the access tokens above." 
         print
         
-        self.ACCESS_TOKEN_KEY = access_token['oauth_token']
-        self.ACCESS_TOKEN_SECRET = access_token['oauth_token_secret']
-        self.__write_tokens()
-        
+        self.ACCESS_TOKEN = (access_token['oauth_token'], access_token['oauth_token_secret'])
+        cursor.execute('''INSERT INTO token_info VALUES (?, ?)''', self.ACCESS_TOKEN) # Add the access token key and secret to the database
+        self.conn.commit()
     
     def __fetch_data(self, url, http_method = "GET", body = '', headers = None):
         '''
@@ -130,12 +130,8 @@ class TweetClient(oauth.Client):
         return req
 
     def setup(self):
-        try:
-            self.__read_tokens() #Reads tokens from a file
-        except:
-            self.__get_tokens() #Does the Twitter/OAuth three legged authentication
-            
-        self.token = oauth.Token(self.ACCESS_TOKEN_KEY, self.ACCESS_TOKEN_SECRET)
+        self.__read_tokens() #Reads tokens from a file
+        self.token = oauth.Token(self.ACCESS_TOKEN[0], self.ACCESS_TOKEN[1])
             
 
     def fetch_user_tweets(self, user_name, count = 20):

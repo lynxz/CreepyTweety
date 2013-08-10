@@ -151,5 +151,5 @@ def generate_interactions_graph(user, tweet_count = 100, max_level = 2, treshold
     plot_interaction_graph(interaction_graph, user)
 
 if __name__ == '__main__':
-    generate_interactions_graph('MedborgareX', tweet_count = 100, max_level = 1, treshold = 2)
+    generate_interactions_graph('MartinSLewis', tweet_count = 200, max_level = 2, treshold = 5)
         
